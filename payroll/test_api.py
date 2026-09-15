@@ -177,6 +177,8 @@ def run_tests():
     mk = r["id"]
     code, r = call("POST", "/api/makeup/%d/review" % mk, {"reviewer_id": w2, "approve": True})
     check("申请人不得自审", code == 409 and "另一人" in r["error"], r)
+    code, r = call("POST", "/api/makeup/%d/review" % mk, {"reviewer_id": w3, "approve": True})
+    check("被补卡人不得复核自己的补卡", code == 409 and "另一人" in r["error"], r)
     code, r = call("POST", "/api/makeup/%d/review" % mk, {"reviewer_id": w1, "approve": True, "note": "监控属实"})
     check("他人复核通过并补卡", code == 200 and r["status"] == "APPROVED" and r.get("punch_id"), r)
     att = attendance_of(a3)
@@ -228,6 +230,15 @@ def run_tests():
     code, r = call("POST", "/api/outputs", {"shift_id": shifts["S1"], "process_id": P["制浆"],
                                             "worker_id": w1, "qty": 0, "batch_key": "b-3"})
     check("数量非正被拦", code == 400, r)
+    code, r = call("POST", "/api/outputs", {"shift_id": shifts["S1"], "process_id": P["制浆"],
+                                            "worker_id": w5, "qty": 1, "batch_key": "b-4"})
+    check("未排班人员产出被拦", code == 409 and "排班" in r["error"], r)
+    code, r = call("POST", "/api/outputs", {"shift_id": shifts["S1"], "process_id": P["制浆"],
+                                            "worker_id": w2, "qty": 1, "batch_key": "b-5"})
+    check("工序与排班不符被拦", code == 409 and "排班" in r["error"], r)
+    code, r = call("POST", "/api/outputs", {"shift_id": shifts["S1"], "process_id": P["复卷"],
+                                            "worker_id": w4, "qty": 1, "batch_key": "b-6"})
+    check("已调出人员产出被拦", code == 409 and "状态" in r["error"], r)
 
     print("== 结算 ==")
     code, r = call("POST", "/api/periods/1/settle", {"by": "财务"})
@@ -285,12 +296,23 @@ def run_tests():
     check("有效行反映调整", eff[(w1, P["制浆"])]["qty"] == 12 and eff[(w1, None)]["minutes"] == -60
           and eff[(w1, None)]["hour_amount"] == -2500, eff)
 
-    print("== 跨期产出不得重复计提 ==")
+    print("== 期间边界重叠拦截 ==")
     code, r = call("POST", "/api/periods", {"name": "重叠期", "start_date": "2026-09-10", "end_date": "2026-09-11"})
-    pid2 = r["id"]
-    code, r = call("POST", "/api/periods/%d/settle" % pid2, {"by": "财务"})
-    check("重叠期结算被拦(产出已计提)", code == 409, r)
-    code, d2 = call("GET", "/api/periods/%d" % pid2)
+    check("创建重叠期间被拦", code == 409 and "重叠" in r["error"], r)
+    code, r = call("POST", "/api/periods", {"name": "跨界期", "start_date": "2026-09-30", "end_date": "2026-10-15"})
+    check("共享一天也算重叠", code == 409 and "重叠" in r["error"], r)
+    code, r = call("POST", "/api/periods", {"name": "2026年8月", "start_date": "2026-08-01", "end_date": "2026-08-31"})
+    check("相邻不重叠期间放行", code == 201, r)
+    # 模拟历史遗留的重叠数据(绕过创建校验直接写库), 结算前必须拦下
+    import sqlite3 as _sq
+    conn = _sq.connect(DB)
+    conn.execute("PRAGMA busy_timeout=30000")
+    cur = conn.execute("INSERT INTO periods(name,start_date,end_date,status) VALUES('遗留重叠期','2026-09-05','2026-09-15','OPEN')")
+    legacy_pid = cur.lastrowid
+    conn.commit(); conn.close()
+    code, r = call("POST", "/api/periods/%d/settle" % legacy_pid, {"by": "财务"})
+    check("遗留重叠期间结算被拦", code == 409 and "重叠" in r["error"], r)
+    code, d2 = call("GET", "/api/periods/%d" % legacy_pid)
     check("被拦结算不留半笔", d2["status"] == "OPEN" and len(d2["docs"]) == 0, d2)
 
     print("== 并发: 打卡幂等 + 结算原子 ==")

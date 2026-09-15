@@ -266,6 +266,16 @@ def assert_not_closed(date_str):
         raise BizError("期间「%s」已封账, 原单只读, 更正请走调整单" % p["name"], 409)
 
 
+def overlapping_periods(start_date, end_date, exclude_id=None):
+    """日期范围有交集即重叠(共享任意一天都算); 相邻不重叠。"""
+    sql = "SELECT id,name,start_date,end_date FROM periods WHERE start_date<=? AND end_date>=?"
+    args = [end_date, start_date]
+    if exclude_id is not None:
+        sql += " AND id<>?"
+        args.append(exclude_id)
+    return q(sql, args)
+
+
 # ---------------------------------------------------------------- 排班
 
 def check_worker_available(worker_id, new_start, new_end, exclude_assignment_id=None):
@@ -460,8 +470,8 @@ def review_makeup(mid, body):
     reviewer_id = body.get("reviewer_id")
     if not q1("SELECT id FROM workers WHERE id=? AND active=1", (reviewer_id,)):
         raise BizError("复核人不存在", 404)
-    if reviewer_id == req["requester_id"]:
-        raise BizError("补卡必须由另一人复核, 申请人与复核人不得相同", 409)
+    if reviewer_id == req["requester_id"] or reviewer_id == req["worker_id"]:
+        raise BizError("补卡必须由另一人复核: 复核人不得为申请人或被补卡员工本人", 409)
     note = body.get("note") or ""
     if not body.get("approve"):
         DB.execute("UPDATE makeup_requests SET status='REJECTED',reviewer_id=?,review_note=?,reviewed_at=? WHERE id=?",
@@ -556,6 +566,12 @@ def post_output(body):
         raise BizError("工序不存在", 404)
     if not q1("SELECT id FROM workers WHERE id=? AND active=1", (body.get("worker_id"),)):
         raise BizError("员工不存在或已停用", 404)
+    asg = q1("SELECT id,status FROM assignments WHERE shift_id=? AND worker_id=? AND process_id=?",
+             (shift["id"], body.get("worker_id"), body.get("process_id")))
+    if not asg:
+        raise BizError("该员工未在此班次的此工序排班, 产出不能入账", 409)
+    if asg["status"] != "ACTIVE":
+        raise BizError("该员工此班次排班状态为 %s, 产出不能入账" % asg["status"], 409)
     qty = int(body.get("qty") or 0)
     if qty <= 0:
         raise BizError("完工数量必须为正整数")
@@ -585,6 +601,10 @@ def settle(pid, body):
     p = period_or_404(pid)
     if p["status"] != "OPEN":
         raise BizError("期间状态为 %s, 不能结算(仅 OPEN 可结算)" % p["status"], 409)
+    ov = overlapping_periods(p["start_date"], p["end_date"], exclude_id=pid)
+    if ov:
+        raise BizError("期间边界与期间「%s」(%s ~ %s)重叠, 同一份有效工时会被重复归集, 请先更正边界再结算"
+                       % (ov[0]["name"], ov[0]["start_date"], ov[0]["end_date"]), 409)
     sids = shift_ids_in_period(p)
     marks = ",".join("?" * len(sids)) or "NULL"
     att = q("""SELECT a.worker_id, a.process_id, SUM(ar.valid_minutes) m
@@ -947,6 +967,10 @@ def create_period(body):
     s, e = parse_date(body.get("start_date")), parse_date(body.get("end_date"))
     if e < s:
         raise BizError("结束日期不能早于开始日期")
+    ov = overlapping_periods(s, e)
+    if ov:
+        raise BizError("期间边界与已有期间「%s」(%s ~ %s)重叠, 同一份工时不允许落入两个期间"
+                       % (ov[0]["name"], ov[0]["start_date"], ov[0]["end_date"]), 409)
     cur = DB.execute("INSERT INTO periods(name,start_date,end_date) VALUES(?,?,?)", (name, s, e))
     return 201, {"id": cur.lastrowid}
 

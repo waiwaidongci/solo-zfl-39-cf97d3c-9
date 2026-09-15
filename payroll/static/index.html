@@ -193,10 +193,9 @@ th{background:#f0f4ec}
   <div class="row c2">
     <div class="panel"><h2>完工登记</h2>
       <div class="flex"><div><label>日期</label><input id="op-date" type="date"></div>
-      <div><label>班次</label><select id="op-shift"></select></div>
+      <div><label>班次</label><select id="op-shift" onchange="loadOpAssignments()"></select></div>
       <div style="flex:0"><button class="ghost" onclick="loadOpShifts()">查询班次</button></div></div>
-      <div class="flex"><div><label>工序</label><select id="op-proc"></select></div>
-      <div><label>员工</label><select id="op-worker"></select></div></div>
+      <label>排班明细(员工 · 工序,仅可选已排班的组合)</label><select id="op-assign"></select>
       <div class="flex"><div><label>数量</label><input id="op-qty" type="number" value="1" min="1"></div>
       <div><label>批次键(重放不重复计提)</label><input id="op-key" readonly></div>
       <div style="flex:0"><button class="ghost" onclick="newOpKey()">新键</button></div></div>
@@ -276,10 +275,10 @@ async function loadMeta(){
   meta=await api("/api/meta");
   $("#ruleHint").textContent=`规则:跨班休息≥${meta.rules.min_rest_minutes/60}小时 · 打卡宽限 前${meta.rules.grace_before_min}/后${meta.rules.grace_after_min}分钟`;
   const wo=meta.workers.map(w=>`<option value="${w.id}">${esc(w.name)}(${esc(w.team)})</option>`).join("");
-  for(const id of["#pk-worker","#mk-worker","#mk-requester","#op-worker"])$(id).innerHTML=wo;
+  for(const id of["#pk-worker","#mk-worker","#mk-requester"])$(id).innerHTML=wo;
   $("#as-worker").innerHTML=wo;
   const po=meta.processes.map(p=>`<option value="${p.id}">${esc(p.name)}(${fmtFen(p.piece_rate)}/${esc(p.unit)})</option>`).join("");
-  $("#as-proc").innerHTML=po;$("#op-proc").innerHTML=po;
+  $("#as-proc").innerHTML=po;
   $("#sc-tpl").innerHTML=meta.templates.map(t=>`<option value="${t.id}">${esc(t.name)} ${t.start_time}-${t.end_time}</option>`).join("");
   $("#teamList").innerHTML=[...new Set(meta.workers.map(w=>w.team))].map(t=>`<option>${esc(t)}</option>`).join("");
   renderBase();
@@ -357,7 +356,7 @@ async function loadMakeups(){
   $("#mk-list").innerHTML=rows.map(m=>{
     let review="";
     if(m.status==="PENDING"){
-      const opts=meta.workers.filter(w=>w.id!==m.requester_id).map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join("");
+      const opts=meta.workers.filter(w=>w.id!==m.requester_id&&w.id!==m.worker_id).map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join("");
       review=`<div class="flex" style="margin-top:6px"><div><select id="rv-${m.id}">${opts}</select></div>
         <div><input id="rn-${m.id}" placeholder="复核意见"></div>
         <div style="flex:0"><button onclick="review(${m.id},true)">通过</button></div>
@@ -431,11 +430,22 @@ async function loadOpShifts(){
   const d=$("#op-date").value||today();
   const shifts=await api(`/api/shifts?from=${d}&to=${d}`);
   $("#op-shift").innerHTML=shifts.map(s=>`<option value="${s.id}">${s.date} ${esc(s.template_name)} ${esc(s.team)}</option>`).join("");
+  loadOpAssignments();
   loadOutputs();
+}
+async function loadOpAssignments(){
+  const sid=$("#op-shift").value;
+  if(!sid){$("#op-assign").innerHTML="";return;}
+  const s=await api("/api/shifts/"+sid);
+  const act=s.assignments.filter(a=>a.status==="ACTIVE");
+  $("#op-assign").innerHTML=act.map(a=>`<option value="${a.worker_id}:${a.process_id}">${esc(a.worker_name)} · ${esc(a.process_name)}</option>`).join("")
+    ||'<option value="">(该班次无在岗排班)</option>';
 }
 async function submitOutput(){
   try{
-    const r=await api("/api/outputs","POST",{shift_id:+$("#op-shift").value,process_id:+$("#op-proc").value,worker_id:+$("#op-worker").value,qty:+$("#op-qty").value,batch_key:$("#op-key").value});
+    if(!$("#op-assign").value)throw new Error("该班次无在岗排班,不能登记完工");
+    const [wid,pid]=$("#op-assign").value.split(":").map(Number);
+    const r=await api("/api/outputs","POST",{shift_id:+$("#op-shift").value,process_id:pid,worker_id:wid,qty:+$("#op-qty").value,batch_key:$("#op-key").value});
     showMsg("#op-msg",r.replay?"重复登记(幂等返回原记录,不重复计提)":"完工已登记",true);
     if(!r.replay)newOpKey();
     loadOutputs();
