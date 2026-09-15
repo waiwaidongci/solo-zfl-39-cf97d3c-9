@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>纸坊排班 · 考勤 · 计件工资系统</title>
+<style>
+:root{--bg:#f2f4f0;--panel:#fff;--ink:#22261f;--muted:#6a7265;--line:#d5ddd1;--accent:#4d6b3f;--accent2:#37522c;--warn:#a0402f;--ok:#2e6b34;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;font-size:14px}
+header{background:#fff;border-bottom:1px solid var(--line);padding:14px 24px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+h1{font-size:20px;margin:0}
+header .sub{color:var(--muted);font-size:13px}
+nav{display:flex;gap:6px;flex-wrap:wrap;padding:10px 24px;background:#fff;border-bottom:1px solid var(--line)}
+nav button{border:1px solid var(--line);background:#f7f9f5;color:var(--ink);border-radius:6px;padding:8px 14px;cursor:pointer;font:inherit}
+nav button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+main{padding:18px 24px;max-width:1280px}
+section.tab{display:none}section.tab.on{display:block}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px}
+.panel h2{margin:0 0 12px;font-size:16px}
+.panel h3{margin:14px 0 8px;font-size:14px}
+label{display:block;margin:8px 0 4px;color:var(--muted);font-size:13px}
+input,select,textarea{width:100%;border:1px solid var(--line);border-radius:6px;padding:8px;font:inherit;background:#fff}
+textarea{min-height:56px}
+button{border:0;border-radius:6px;background:var(--accent);color:#fff;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer}
+button:hover{background:var(--accent2)}
+button.ghost{background:#e9eee5;color:var(--ink)}
+button.danger{background:var(--warn)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.row{display:grid;gap:12px}
+.row.c2{grid-template-columns:1fr 1fr}.row.c3{grid-template-columns:1fr 1fr 1fr}.row.c4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:900px){.row.c2,.row.c3,.row.c4{grid-template-columns:1fr}}
+table{width:100%;border-collapse:collapse;font-size:13px;background:#fff}
+th,td{border:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}
+th{background:#f0f4ec}
+.msg{margin:10px 0;padding:9px 12px;border-radius:6px;display:none}
+.msg.ok{display:block;background:#e5f1e2;color:var(--ok);border:1px solid #bcd8b4}
+.msg.err{display:block;background:#f7e4e0;color:var(--warn);border:1px solid #e0b7ae}
+.pill{display:inline-block;border-radius:999px;padding:2px 9px;font-size:12px;border:1px solid var(--line)}
+.pill.g{background:#e5f1e2;color:var(--ok)}.pill.r{background:#f7e4e0;color:var(--warn)}.pill.y{background:#f6efda;color:#8a6d1a}
+.muted{color:var(--muted);font-size:12px}
+.money{font-variant-numeric:tabular-nums;font-weight:600}
+.flex{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
+.flex>div{flex:1;min-width:150px}
+.chain{border-left:3px solid var(--accent);padding-left:10px;margin:6px 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>纸坊排班 · 考勤 · 计件工资系统</h1>
+  <span class="sub" id="ruleHint"></span>
+  <span style="flex:1"></span>
+  <button class="ghost" onclick="loadAll()">刷新</button>
+</header>
+<nav id="nav"></nav>
+<main>
+
+<!-- ============ 基础数据 ============ -->
+<section class="tab" id="tab-base">
+  <div class="row c2">
+    <div class="panel"><h2>员工</h2>
+      <div class="flex"><div><label>姓名</label><input id="w-name"></div>
+      <div><label>班组</label><input id="w-team" list="teamList" placeholder="甲班/乙班"><datalist id="teamList"></datalist></div>
+      <div><label>计时单价(元/小时)</label><input id="w-rate" type="number" value="25" step="0.5"></div>
+      <div style="flex:0"><button onclick="addWorker()">添加</button></div></div>
+      <div class="msg" id="w-msg"></div>
+      <table id="w-table"></table>
+    </div>
+    <div class="panel"><h2>工序</h2>
+      <div class="flex"><div><label>编码</label><input id="p-code" placeholder="如 ZJ"></div>
+      <div><label>名称</label><input id="p-name" placeholder="如 制浆"></div>
+      <div><label>单位</label><input id="p-unit" value="件"></div>
+      <div><label>计件单价(元)</label><input id="p-rate" type="number" value="100" step="1"></div>
+      <div style="flex:0"><button onclick="addProcess()">添加</button></div></div>
+      <div class="msg" id="p-msg"></div>
+      <table id="p-table"></table>
+    </div>
+  </div>
+  <div class="row c2">
+    <div class="panel"><h2>班次模板</h2>
+      <div class="flex"><div><label>名称</label><input id="t-name" placeholder="如 早班"></div>
+      <div><label>上班</label><input id="t-start" type="time" value="06:00"></div>
+      <div><label>下班</label><input id="t-end" type="time" value="14:00"></div>
+      <div style="flex:0"><button onclick="addTemplate()">添加</button></div></div>
+      <div class="msg" id="t-msg"></div>
+      <table id="t-table"></table>
+      <div class="muted">下班时间不晚于上班时间视为跨零点班次。</div>
+    </div>
+    <div class="panel"><h2>结算期间</h2>
+      <div class="flex"><div><label>名称</label><input id="pe-name" placeholder="如 2026年10月"></div>
+      <div><label>开始</label><input id="pe-start" type="date"></div>
+      <div><label>结束</label><input id="pe-end" type="date"></div>
+      <div style="flex:0"><button onclick="addPeriod()">添加</button></div></div>
+      <div class="msg" id="pe-msg"></div>
+      <table id="pe-table"></table>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 排班 ============ -->
+<section class="tab" id="tab-sched">
+  <div class="panel"><h2>班次安排</h2>
+    <div class="flex">
+      <div><label>日期</label><input id="sc-date" type="date"></div>
+      <div><label>班次模板</label><select id="sc-tpl"></select></div>
+      <div><label>班组</label><input id="sc-team" list="teamList"></div>
+      <div style="flex:0"><button onclick="createShift()">开班</button></div>
+      <div style="flex:0"><button class="ghost" onclick="loadShifts()">查询当日班次</button></div>
+    </div>
+    <div class="msg" id="sc-msg"></div>
+    <table id="sc-shifts"></table>
+  </div>
+  <div class="panel" id="sc-detail" style="display:none"><h2 id="sc-detail-title">排人</h2>
+    <div class="flex">
+      <div><label>员工</label><select id="as-worker"></select></div>
+      <div><label>工序</label><select id="as-proc"></select></div>
+      <div><label>操作人</label><input id="as-by" value="班长"></div>
+      <div style="flex:0"><button onclick="assign()">排入</button></div>
+    </div>
+    <div class="msg" id="as-msg"></div>
+    <table id="as-table"></table>
+  </div>
+</section>
+
+<!-- ============ 打卡 ============ -->
+<section class="tab" id="tab-punch">
+  <div class="row c2">
+    <div class="panel"><h2>打卡</h2>
+      <label>员工</label><select id="pk-worker"></select>
+      <label>类型</label><select id="pk-type"><option value="IN">上班</option><option value="OUT">下班</option></select>
+      <label>时间</label><input id="pk-ts" type="datetime-local">
+      <label>幂等键(同一打卡重放用同一键,不会重复计工)</label>
+      <div class="flex"><div><input id="pk-key" readonly></div><div style="flex:0"><button class="ghost" onclick="newKey()">新键</button></div></div>
+      <div style="margin-top:10px"><button onclick="doPunch()">打卡</button></div>
+      <div class="msg" id="pk-msg"></div>
+    </div>
+    <div class="panel"><h2>打卡流水</h2>
+      <div class="flex"><div><label>日期</label><input id="pk-date" type="date"></div>
+      <div style="flex:0"><button class="ghost" onclick="loadPunches()">查询</button></div></div>
+      <table id="pk-table"></table>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 补卡复核 ============ -->
+<section class="tab" id="tab-makeup">
+  <div class="row c2">
+    <div class="panel"><h2>补卡申请</h2>
+      <label>补卡员工</label><select id="mk-worker"></select>
+      <label>类型</label><select id="mk-type"><option value="IN">上班</option><option value="OUT">下班</option></select>
+      <label>补卡时间</label><input id="mk-ts" type="datetime-local">
+      <label>证据(必填)</label><textarea id="mk-evidence" placeholder="如:车间监控截图、当班班长签字证明"></textarea>
+      <label>申请人</label><select id="mk-requester"></select>
+      <div style="margin-top:10px"><button onclick="submitMakeup()">提交申请</button></div>
+      <div class="msg" id="mk-msg"></div>
+    </div>
+    <div class="panel"><h2>复核(须另一人复核,通过后自动重算工时)</h2>
+      <div class="flex"><div><label>状态</label><select id="mk-filter"><option value="">全部</option><option>PENDING</option><option>APPROVED</option><option>REJECTED</option></select></div>
+      <div style="flex:0"><button class="ghost" onclick="loadMakeups()">查询</button></div></div>
+      <div class="msg" id="rv-msg"></div>
+      <div id="mk-list"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 变更链 ============ -->
+<section class="tab" id="tab-change">
+  <div class="panel"><h2>请假 / 加班 / 停工 / 调班</h2>
+    <div class="flex">
+      <div><label>日期</label><input id="ch-date" type="date"></div>
+      <div><label>班次</label><select id="ch-shift" onchange="loadChAssignments()"></select></div>
+      <div><label>排班明细</label><select id="ch-assignment" onchange="loadChain()"></select></div>
+      <div style="flex:0"><button class="ghost" onclick="loadChShifts()">查询班次</button></div>
+    </div>
+    <div class="flex">
+      <div><label>变更类型</label><select id="ch-type" onchange="renderChPayload()">
+        <option value="LEAVE">请假</option><option value="OVERTIME">加班</option>
+        <option value="SHUTDOWN">停工</option><option value="SWAP">调班</option></select></div>
+      <div id="ch-payload" style="flex:2"></div>
+    </div>
+    <div class="flex">
+      <div><label>事由</label><input id="ch-reason" placeholder="变更原因"></div>
+      <div><label>操作人</label><input id="ch-by" value="班长"></div>
+      <div style="flex:0"><button onclick="submitChange()">提交变更</button></div>
+    </div>
+    <div class="msg" id="ch-msg"></div>
+  </div>
+  <div class="panel"><h2>变更链</h2><div id="ch-chain" class="muted">请选择排班明细</div></div>
+</section>
+
+<!-- ============ 完工 ============ -->
+<section class="tab" id="tab-output">
+  <div class="row c2">
+    <div class="panel"><h2>完工登记</h2>
+      <div class="flex"><div><label>日期</label><input id="op-date" type="date"></div>
+      <div><label>班次</label><select id="op-shift"></select></div>
+      <div style="flex:0"><button class="ghost" onclick="loadOpShifts()">查询班次</button></div></div>
+      <div class="flex"><div><label>工序</label><select id="op-proc"></select></div>
+      <div><label>员工</label><select id="op-worker"></select></div></div>
+      <div class="flex"><div><label>数量</label><input id="op-qty" type="number" value="1" min="1"></div>
+      <div><label>批次键(重放不重复计提)</label><input id="op-key" readonly></div>
+      <div style="flex:0"><button class="ghost" onclick="newOpKey()">新键</button></div></div>
+      <div style="margin-top:10px"><button onclick="submitOutput()">登记完工</button></div>
+      <div class="msg" id="op-msg"></div>
+    </div>
+    <div class="panel"><h2>完工记录</h2><table id="op-table"></table></div>
+  </div>
+</section>
+
+<!-- ============ 考勤 ============ -->
+<section class="tab" id="tab-att">
+  <div class="panel"><h2>考勤工时</h2>
+    <div class="flex"><div><label>日期</label><input id="at-date" type="date"></div>
+    <div style="flex:0"><button class="ghost" onclick="loadAttendance()">查询</button></div></div>
+    <table id="at-table"></table>
+  </div>
+</section>
+
+<!-- ============ 结算封账 ============ -->
+<section class="tab" id="tab-pay">
+  <div class="panel"><h2>结算期间</h2>
+    <div class="msg" id="pay-msg"></div>
+    <table id="pay-periods"></table>
+  </div>
+  <div class="panel" id="pay-detail" style="display:none"><h2 id="pay-title"></h2>
+    <div id="pay-summary"></div>
+    <h3>有效汇总(结算 + 调整)</h3><table id="pay-lines"></table>
+    <h3>单据</h3><table id="pay-docs"></table>
+    <div id="pay-doc-lines"></div>
+    <div id="adj-panel" style="display:none">
+      <h3>开具调整单(封账后唯一更正方式,差额必须对平)</h3>
+      <div id="adj-rows"></div>
+      <div style="margin:8px 0"><button class="ghost" onclick="addAdjRow()">+ 加一行</button></div>
+      <div class="flex">
+        <div><label>事由</label><input id="adj-reason" placeholder="更正原因"></div>
+        <div><label>操作人</label><input id="adj-by" value="财务"></div>
+      </div>
+      <div id="adj-preview" class="muted" style="margin:8px 0"></div>
+      <button onclick="submitAdjust()">提交调整单</button>
+      <div class="msg" id="adj-msg"></div>
+    </div>
+  </div>
+</section>
+
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const TABS=[["base","基础数据"],["sched","排班"],["punch","打卡"],["makeup","补卡复核"],["change","变更链"],["output","完工"],["att","考勤"],["pay","结算封账"]];
+let meta={workers:[],processes:[],templates:[],periods:[],rules:{}};
+let curShiftId=null,curPeriodId=null;
+
+async function api(path,method="GET",body=null){
+  const opt={method};
+  if(body){opt.headers={"Content-Type":"application/json"};opt.body=JSON.stringify(body);}
+  const res=await fetch(path,opt);
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok)throw new Error(data.error||("HTTP "+res.status));
+  return data;
+}
+function showMsg(sel,text,ok){const el=$(sel);el.textContent=text;el.className="msg "+(ok?"ok":"err");}
+function fmtFen(f){return "¥"+(f/100).toFixed(2);}
+function fmtMin(m){if(m==null)return "-";const h=Math.floor(m/60),mm=m%60;return h?h+"小时"+(mm?mm+"分":""):mm+"分";}
+function fmtTs(s){return s?s.replace("T"," ").slice(0,16):"-";}
+function uuid(){return crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random();}
+function nowLocal(){const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16);}
+function today(){return nowLocal().slice(0,10);}
+function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+const ATT_ST={OK:"正常",MISSING:"缺卡",LEAVE:"请假",SWAPPED_OUT:"已调出",NONE:"无记录"};
+const AS_ST={ACTIVE:"在岗",LEAVE:"请假",SWAPPED_OUT:"已调出"};
+const CH_T={LEAVE:"请假",OVERTIME:"加班",SHUTDOWN:"停工",SWAP:"调班"};
+const PILL={ACCEPTED:"g",OK:"g",APPROVED:"g",ACTIVE:"g",SETTLED:"y",PENDING:"y",REJECTED:"r",MISSING:"r",CLOSED:"r",LEAVE:"y",SWAPPED_OUT:"y",OPEN:"g"};
+function pill(t){return '<span class="pill '+(PILL[t]||"")+'">'+(ATT_ST[t]||AS_ST[t]||t)+'</span>';}
+
+// ---------- 通用 ----------
+async function loadMeta(){
+  meta=await api("/api/meta");
+  $("#ruleHint").textContent=`规则:跨班休息≥${meta.rules.min_rest_minutes/60}小时 · 打卡宽限 前${meta.rules.grace_before_min}/后${meta.rules.grace_after_min}分钟`;
+  const wo=meta.workers.map(w=>`<option value="${w.id}">${esc(w.name)}(${esc(w.team)})</option>`).join("");
+  for(const id of["#pk-worker","#mk-worker","#mk-requester","#op-worker"])$(id).innerHTML=wo;
+  $("#as-worker").innerHTML=wo;
+  const po=meta.processes.map(p=>`<option value="${p.id}">${esc(p.name)}(${fmtFen(p.piece_rate)}/${esc(p.unit)})</option>`).join("");
+  $("#as-proc").innerHTML=po;$("#op-proc").innerHTML=po;
+  $("#sc-tpl").innerHTML=meta.templates.map(t=>`<option value="${t.id}">${esc(t.name)} ${t.start_time}-${t.end_time}</option>`).join("");
+  $("#teamList").innerHTML=[...new Set(meta.workers.map(w=>w.team))].map(t=>`<option>${esc(t)}</option>`).join("");
+  renderBase();
+}
+function loadAll(){loadMeta().then(()=>{loadShifts();loadPunches();loadMakeups();loadChShifts();loadOpShifts();loadAttendance();loadPeriods();}).catch(e=>alert(e.message));}
+
+// ---------- 基础数据 ----------
+function renderBase(){
+  $("#w-table").innerHTML="<tr><th>姓名</th><th>班组</th><th>计时单价</th></tr>"+meta.workers.map(w=>`<tr><td>${esc(w.name)}</td><td>${esc(w.team)}</td><td>${fmtFen(w.hour_rate)}/小时</td></tr>`).join("");
+  $("#p-table").innerHTML="<tr><th>编码</th><th>名称</th><th>单位</th><th>计件单价</th></tr>"+meta.processes.map(p=>`<tr><td>${esc(p.code)}</td><td>${esc(p.name)}</td><td>${esc(p.unit)}</td><td>${fmtFen(p.piece_rate)}</td></tr>`).join("");
+  $("#t-table").innerHTML="<tr><th>名称</th><th>上班时间</th><th>下班时间</th></tr>"+meta.templates.map(t=>`<tr><td>${esc(t.name)}</td><td>${t.start_time}</td><td>${t.end_time}</td></tr>`).join("");
+  $("#pe-table").innerHTML="<tr><th>名称</th><th>起止</th><th>状态</th></tr>"+meta.periods.map(p=>`<tr><td>${esc(p.name)}</td><td>${p.start_date} ~ ${p.end_date}</td><td>${pill(p.status)}</td></tr>`).join("");
+}
+async function addWorker(){try{await api("/api/workers","POST",{name:$("#w-name").value,team:$("#w-team").value,hour_rate:Math.round(parseFloat($("#w-rate").value||"25")*100)});showMsg("#w-msg","已添加",true);await loadMeta();}catch(e){showMsg("#w-msg",e.message,false);}}
+async function addProcess(){try{await api("/api/processes","POST",{code:$("#p-code").value,name:$("#p-name").value,unit:$("#p-unit").value,piece_rate:Math.round(parseFloat($("#p-rate").value||"0")*100)});showMsg("#p-msg","已添加",true);await loadMeta();}catch(e){showMsg("#p-msg",e.message,false);}}
+async function addTemplate(){try{await api("/api/templates","POST",{name:$("#t-name").value,start_time:$("#t-start").value,end_time:$("#t-end").value});showMsg("#t-msg","已添加",true);await loadMeta();}catch(e){showMsg("#t-msg",e.message,false);}}
+async function addPeriod(){try{await api("/api/periods","POST",{name:$("#pe-name").value,start_date:$("#pe-start").value,end_date:$("#pe-end").value});showMsg("#pe-msg","已添加",true);await loadMeta();loadPeriods();}catch(e){showMsg("#pe-msg",e.message,false);}}
+
+// ---------- 排班 ----------
+async function loadShifts(){
+  const d=$("#sc-date").value||today();
+  const shifts=await api(`/api/shifts?from=${d}&to=${d}`);
+  $("#sc-shifts").innerHTML="<tr><th>班次</th><th>班组</th><th>时间窗</th><th>已排人数</th><th></th></tr>"+
+    shifts.map(s=>`<tr><td>${esc(s.template_name)}</td><td>${esc(s.team)}</td><td>${fmtTs(s.window[0])} ~ ${fmtTs(s.window[1])}</td><td>${s.headcount}</td><td><button class="ghost" onclick="openShift(${s.id})">排人</button></td></tr>`).join("")||"<tr><td class='muted'>当日暂无班次,请先开班</td></tr>";
+}
+async function createShift(){
+  try{
+    await api("/api/shifts","POST",{date:$("#sc-date").value,template_id:+$("#sc-tpl").value,team:$("#sc-team").value});
+    showMsg("#sc-msg","开班成功",true);loadShifts();
+  }catch(e){showMsg("#sc-msg",e.message,false);}
+}
+async function openShift(id){
+  curShiftId=id;
+  const s=await api("/api/shifts/"+id);
+  $("#sc-detail").style.display="block";
+  $("#sc-detail-title").textContent=`排人:${s.date} ${s.template_name}(${s.team}) ${s.start_time}-${s.end_time}`;
+  $("#as-table").innerHTML="<tr><th>员工</th><th>工序</th><th>状态</th><th>考勤</th><th>有效工时</th></tr>"+
+    s.assignments.map(a=>`<tr><td>${esc(a.worker_name)}</td><td>${esc(a.process_name)}</td><td>${pill(a.status)}</td><td>${pill(a.att_status)}</td><td>${fmtMin(a.valid_minutes)}</td></tr>`).join("")||"<tr><td class='muted'>尚未排人</td></tr>";
+}
+async function assign(){
+  try{
+    await api("/api/assignments","POST",{shift_id:curShiftId,worker_id:+$("#as-worker").value,process_id:+$("#as-proc").value,by:$("#as-by").value});
+    showMsg("#as-msg","排班成功",true);openShift(curShiftId);loadShifts();
+  }catch(e){showMsg("#as-msg",e.message,false);}
+}
+
+// ---------- 打卡 ----------
+function newKey(){$("#pk-key").value=uuid();}
+async function doPunch(){
+  try{
+    const r=await api("/api/punches","POST",{worker_id:+$("#pk-worker").value,type:$("#pk-type").value,ts:$("#pk-ts").value,idem_key:$("#pk-key").value});
+    const tag=r.replay?"重复打卡(幂等返回原记录,不重复计工)":(r.status==="ACCEPTED"?"打卡成功":"打卡被拒绝:"+r.reason);
+    showMsg("#pk-msg",tag,r.status==="ACCEPTED");
+    if(!r.replay)newKey();
+    loadPunches();
+  }catch(e){showMsg("#pk-msg",e.message,false);}
+}
+async function loadPunches(){
+  const d=$("#pk-date").value;
+  const rows=await api("/api/punches"+(d?`?date=${d}`:""));
+  $("#pk-table").innerHTML="<tr><th>员工</th><th>类型</th><th>时间</th><th>来源</th><th>结果</th></tr>"+
+    rows.map(p=>`<tr><td>${esc(p.worker_name)}</td><td>${p.type==="IN"?"上班":"下班"}</td><td>${fmtTs(p.ts)}</td><td>${p.source==="MAKEUP"?"补卡":"正常"}</td><td>${pill(p.status)}${p.reason?'<div class="muted">'+esc(p.reason)+"</div>":""}</td></tr>`).join("")||"<tr><td class='muted'>暂无记录</td></tr>";
+}
+
+// ---------- 补卡复核 ----------
+async function submitMakeup(){
+  try{
+    await api("/api/makeup","POST",{worker_id:+$("#mk-worker").value,type:$("#mk-type").value,ts:$("#mk-ts").value,evidence:$("#mk-evidence").value,requester_id:+$("#mk-requester").value});
+    showMsg("#mk-msg","已提交,待复核",true);$("#mk-evidence").value="";loadMakeups();
+  }catch(e){showMsg("#mk-msg",e.message,false);}
+}
+async function loadMakeups(){
+  const st=$("#mk-filter").value;
+  const rows=await api("/api/makeup"+(st?`?status=${st}`:""));
+  $("#mk-list").innerHTML=rows.map(m=>{
+    let review="";
+    if(m.status==="PENDING"){
+      const opts=meta.workers.filter(w=>w.id!==m.requester_id).map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join("");
+      review=`<div class="flex" style="margin-top:6px"><div><select id="rv-${m.id}">${opts}</select></div>
+        <div><input id="rn-${m.id}" placeholder="复核意见"></div>
+        <div style="flex:0"><button onclick="review(${m.id},true)">通过</button></div>
+        <div style="flex:0"><button class="danger" onclick="review(${m.id},false)">驳回</button></div></div>`;
+    }
+    return `<div class="chain"><b>${esc(m.worker_name)}</b> ${m.type==="IN"?"上班":"下班"} ${fmtTs(m.ts)} ${pill(m.status)}
+      <div class="muted">证据:${esc(m.evidence)} · 申请人:${esc(m.requester_name||"-")}${m.reviewer_name?" · 复核人:"+esc(m.reviewer_name):""}${m.review_note?" · 意见:"+esc(m.review_note):""}</div>${review}</div>`;
+  }).join("")||'<div class="muted">暂无申请</div>';
+}
+async function review(id,approve){
+  try{
+    await api(`/api/makeup/${id}/review`,"POST",{reviewer_id:+$("#rv-"+id).value,approve,note:$("#rn-"+id).value});
+    showMsg("#rv-msg",approve?"已通过并补卡,工时已重算":"已驳回",true);loadMakeups();
+  }catch(e){showMsg("#rv-msg",e.message,false);}
+}
+
+// ---------- 变更链 ----------
+async function loadChShifts(){
+  const d=$("#ch-date").value||today();
+  const shifts=await api(`/api/shifts?from=${d}&to=${d}`);
+  $("#ch-shift").innerHTML=shifts.map(s=>`<option value="${s.id}">${s.date} ${esc(s.template_name)} ${esc(s.team)}</option>`).join("");
+  loadChAssignments();
+}
+async function loadChAssignments(){
+  const sid=$("#ch-shift").value;
+  if(!sid){$("#ch-assignment").innerHTML="";$("#ch-chain").textContent="请选择排班明细";return;}
+  const s=await api("/api/shifts/"+sid);
+  $("#ch-assignment").innerHTML=s.assignments.map(a=>`<option value="${a.id}">#${a.id} ${esc(a.worker_name)} · ${esc(a.process_name)} · ${AS_ST[a.status]||a.status}</option>`).join("");
+  loadChain();
+}
+function renderChPayload(){
+  const t=$("#ch-type").value,el=$("#ch-payload");
+  if(t==="OVERTIME"||t==="SHUTDOWN")el.innerHTML=`<label>${t==="OVERTIME"?"加班":"停工"}分钟</label><input id="ch-minutes" type="number" value="60" min="1" max="720">`;
+  else if(t==="SWAP")el.innerHTML=`<div class="flex"><div><label>调入班次</label><select id="ch-toshift"></select></div><div><label>工序(默认同工序)</label><select id="ch-toproc"><option value="">不变</option></select></div></div>`;
+  else el.innerHTML="";
+  if(t==="SWAP"){
+    const d=$("#ch-date").value||today();
+    api(`/api/shifts?from=${d}&to=${d}`).then(shifts=>{
+      $("#ch-toshift").innerHTML=shifts.map(s=>`<option value="${s.id}">${s.date} ${esc(s.template_name)} ${esc(s.team)}</option>`).join("");
+      $("#ch-toproc").innerHTML='<option value="">不变</option>'+meta.processes.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("");
+    });
+  }
+}
+async function submitChange(){
+  try{
+    const t=$("#ch-type").value,payload={};
+    if(t==="OVERTIME"||t==="SHUTDOWN")payload.minutes=+$("#ch-minutes").value;
+    if(t==="SWAP"){payload.to_shift_id=+$("#ch-toshift").value;if($("#ch-toproc").value)payload.process_id=+$("#ch-toproc").value;}
+    await api("/api/changes","POST",{assignment_id:+$("#ch-assignment").value,type:t,payload,reason:$("#ch-reason").value,by:$("#ch-by").value});
+    showMsg("#ch-msg","变更已入账",true);loadChAssignments();
+  }catch(e){showMsg("#ch-msg",e.message,false);}
+}
+async function loadChain(){
+  const aid=$("#ch-assignment").value;
+  if(!aid){$("#ch-chain").textContent="请选择排班明细";return;}
+  const rows=await api("/api/changes?assignment_id="+aid);
+  $("#ch-chain").innerHTML=rows.map(c=>{
+    const p=JSON.parse(c.payload||"{}");
+    let detail="";
+    if(c.type==="OVERTIME")detail=`加班 ${p.minutes} 分钟`;
+    if(c.type==="SHUTDOWN")detail=`停工 ${p.minutes} 分钟`;
+    if(c.type==="SWAP")detail=`调入班次 #${p.to_shift_id} → 新明细 #${p.new_assignment_id}`;
+    if(c.type==="LEAVE")detail="请假,本班工时不计";
+    return `<div class="chain"><b>#${c.seq} ${CH_T[c.type]}</b> ${detail}<div class="muted">${esc(c.reason||"")} · ${esc(c.created_by||"")} · ${fmtTs(c.created_at)}${c.prev_id?" · 上接 #"+c.prev_id:""}</div></div>`;
+  }).join("")||'<div class="muted">暂无变更</div>';
+}
+
+// ---------- 完工 ----------
+function newOpKey(){$("#op-key").value=uuid();}
+async function loadOpShifts(){
+  const d=$("#op-date").value||today();
+  const shifts=await api(`/api/shifts?from=${d}&to=${d}`);
+  $("#op-shift").innerHTML=shifts.map(s=>`<option value="${s.id}">${s.date} ${esc(s.template_name)} ${esc(s.team)}</option>`).join("");
+  loadOutputs();
+}
+async function submitOutput(){
+  try{
+    const r=await api("/api/outputs","POST",{shift_id:+$("#op-shift").value,process_id:+$("#op-proc").value,worker_id:+$("#op-worker").value,qty:+$("#op-qty").value,batch_key:$("#op-key").value});
+    showMsg("#op-msg",r.replay?"重复登记(幂等返回原记录,不重复计提)":"完工已登记",true);
+    if(!r.replay)newOpKey();
+    loadOutputs();
+  }catch(e){showMsg("#op-msg",e.message,false);}
+}
+async function loadOutputs(){
+  const sid=$("#op-shift").value;
+  const rows=await api("/api/outputs"+(sid?`?shift_id=${sid}`:""));
+  $("#op-table").innerHTML="<tr><th>日期</th><th>员工</th><th>工序</th><th>数量</th><th>登记人</th></tr>"+
+    rows.map(o=>`<tr><td>${o.shift_date}</td><td>${esc(o.worker_name)}</td><td>${esc(o.process_name)}</td><td>${o.qty}</td><td>${esc(o.recorded_by||"")}</td></tr>`).join("")||"<tr><td class='muted'>暂无记录</td></tr>";
+}
+
+// ---------- 考勤 ----------
+async function loadAttendance(){
+  const d=$("#at-date").value||today();
+  const rows=await api("/api/attendance?date="+d);
+  $("#at-table").innerHTML="<tr><th>日期</th><th>班次</th><th>员工</th><th>工序</th><th>上班打卡</th><th>下班打卡</th><th>基础工时</th><th>调整(加班+/停工-)</th><th>有效工时</th><th>状态</th></tr>"+
+    rows.map(a=>`<tr><td>${a.date}</td><td>${esc(a.template_name)}</td><td>${esc(a.worker_name)}</td><td>${esc(a.process_name)}</td><td>${fmtTs(a.in_ts)}</td><td>${fmtTs(a.out_ts)}</td><td>${fmtMin(a.base_minutes)}</td><td>${a.adjust_minutes||0}分</td><td><b>${fmtMin(a.valid_minutes)}</b></td><td>${pill(a.att_status)}${a.assign_status!=="ACTIVE"?" "+pill(a.assign_status):""}</td></tr>`).join("")||"<tr><td class='muted'>当日无排班</td></tr>";
+}
+
+// ---------- 结算封账 ----------
+async function loadPeriods(){
+  const rows=await api("/api/periods");
+  $("#pay-periods").innerHTML="<tr><th>期间</th><th>起止</th><th>状态</th><th>操作</th></tr>"+
+    rows.map(p=>{let act="";
+      if(p.status==="OPEN")act+=`<button onclick="settle(${p.id})">结算</button> `;
+      if(p.status==="SETTLED")act+=`<button class="danger" onclick="closePeriod(${p.id})">封账</button> `;
+      act+=`<button class="ghost" onclick="openPeriod(${p.id})">查看</button>`;
+      return `<tr><td>${esc(p.name)}</td><td>${p.start_date} ~ ${p.end_date}</td><td>${pill(p.status)}</td><td>${act}</td></tr>`;}).join("");
+}
+async function settle(pid){
+  try{const r=await api(`/api/periods/${pid}/settle`,"POST",{by:"财务"});
+    showMsg("#pay-msg",`结算完成:单号 #${r.doc_id},总额 ${fmtFen(r.total)}${r.warnings.length?" · 警告:"+r.warnings.join(";"):""}`,true);
+    loadPeriods();openPeriod(pid);
+  }catch(e){showMsg("#pay-msg",e.message,false);}
+}
+async function closePeriod(pid){
+  try{await api(`/api/periods/${pid}/close`,"POST",{by:"财务"});showMsg("#pay-msg","已封账,原单只读,更正请开调整单",true);loadPeriods();openPeriod(pid);}
+  catch(e){showMsg("#pay-msg",e.message,false);}
+}
+async function openPeriod(pid){
+  curPeriodId=pid;
+  const p=await api("/api/periods/"+pid);
+  $("#pay-detail").style.display="block";
+  $("#pay-title").textContent=`${p.name}(${p.start_date} ~ ${p.end_date}) ${p.status==="CLOSED"?"已封账":p.status==="SETTLED"?"已结算":"开放中"}`;
+  $("#pay-summary").innerHTML=`<p>有效总额:<span class="money" style="font-size:20px">${fmtFen(p.effective_total)}</span></p>`;
+  $("#pay-lines").innerHTML="<tr><th>员工</th><th>工序</th><th>数量</th><th>有效工时</th><th>计件金额</th><th>计时金额</th><th>合计</th></tr>"+
+    p.effective_lines.map(l=>`<tr><td>${esc(l.worker_name)}</td><td>${esc(l.process_name||"-")}</td><td>${l.qty}</td><td>${fmtMin(l.minutes)}</td><td class="money">${fmtFen(l.piece_amount)}</td><td class="money">${fmtFen(l.hour_amount)}</td><td class="money">${fmtFen(l.amount)}</td></tr>`).join("")||"<tr><td class='muted'>暂无</td></tr>";
+  $("#pay-docs").innerHTML="<tr><th>单号</th><th>类型</th><th>金额/差额</th><th>调整前</th><th>调整后</th><th>事由</th><th></th></tr>"+
+    p.docs.map(d=>`<tr><td>#${d.id}</td><td>${d.type==="SETTLEMENT"?"结算单":"调整单"}</td><td class="money">${fmtFen(d.total)}</td><td>${d.before_total==null?"-":fmtFen(d.before_total)}</td><td>${d.after_total==null?"-":fmtFen(d.after_total)}</td><td>${esc(d.reason||"")}</td><td><button class="ghost" onclick="showDoc(${d.id})">明细</button></td></tr>`).join("")||"<tr><td class='muted'>暂无单据</td></tr>";
+  $("#pay-doc-lines").innerHTML="";
+  $("#adj-panel").style.display=p.status==="CLOSED"?"block":"none";
+  if(p.status==="CLOSED"){$("#adj-rows").innerHTML="";addAdjRow();}
+}
+async function showDoc(id){
+  const d=await api("/api/docs/"+id);
+  $("#pay-doc-lines").innerHTML=`<h3>单据 #${d.id} 明细</h3><table><tr><th>员工</th><th>工序</th><th>数量</th><th>工时</th><th>计件</th><th>计时</th><th>金额</th></tr>`+
+    d.lines.map(l=>`<tr><td>${esc(l.worker_name)}</td><td>${esc(l.process_name||"-")}</td><td>${l.qty}</td><td>${fmtMin(l.minutes)}</td><td class="money">${fmtFen(l.piece_amount)}</td><td class="money">${fmtFen(l.hour_amount)}</td><td class="money">${fmtFen(l.amount)}</td></tr>`).join("")+"</table>";
+}
+function addAdjRow(){
+  const i=$("#adj-rows").children.length;
+  const wo=meta.workers.map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join("");
+  const po='<option value="">(仅调工时)</option>'+meta.processes.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("");
+  $("#adj-rows").insertAdjacentHTML("beforeend",
+    `<div class="flex" id="adjr-${i}"><div><label>员工</label><select class="adj-w">${wo}</select></div>
+     <div><label>工序</label><select class="adj-p">${po}</select></div>
+     <div><label>数量差额</label><input class="adj-q" type="number" value="0"></div>
+     <div><label>工时差额(分钟)</label><input class="adj-m" type="number" value="0"></div>
+     <div style="flex:0"><button class="danger" onclick="this.closest('.flex').remove();previewAdj()">删</button></div></div>`);
+  $("#adj-rows").querySelectorAll("input,select").forEach(el=>el.oninput=previewAdj);
+  previewAdj();
+}
+function adjLines(){
+  return [...$("#adj-rows").children].map(r=>({
+    worker_id:+r.querySelector(".adj-w").value,
+    process_id:r.querySelector(".adj-p").value?+r.querySelector(".adj-p").value:null,
+    qty_delta:+r.querySelector(".adj-q").value||0,
+    minutes_delta:+r.querySelector(".adj-m").value||0}));
+}
+function previewAdj(){
+  api("/api/periods/"+curPeriodId).then(p=>{
+    let delta=0;
+    for(const l of adjLines()){
+      const w=meta.workers.find(x=>x.id===l.worker_id);
+      const pr=meta.processes.find(x=>x.id===l.process_id);
+      delta+=(l.qty_delta*(pr?pr.piece_rate:0))+Math.round(l.minutes_delta*(w?w.hour_rate:0)/60);
+    }
+    $("#adj-preview").textContent=`账面 ${fmtFen(p.effective_total)} + 调整 ${fmtFen(delta)} = 调整后 ${fmtFen(p.effective_total+delta)}`;
+  });
+}
+async function submitAdjust(){
+  try{
+    const p=await api("/api/periods/"+curPeriodId);
+    let delta=0;
+    const lines=adjLines();
+    for(const l of lines){
+      const w=meta.workers.find(x=>x.id===l.worker_id);
+      const pr=meta.processes.find(x=>x.id===l.process_id);
+      delta+=(l.qty_delta*(pr?pr.piece_rate:0))+Math.round(l.minutes_delta*(w?w.hour_rate:0)/60);
+    }
+    const r=await api(`/api/periods/${curPeriodId}/adjust`,"POST",{lines,expected_after:p.effective_total+delta,reason:$("#adj-reason").value,by:$("#adj-by").value});
+    showMsg("#adj-msg",`调整单 #${r.doc_id} 已入账:${fmtFen(r.before_total)} → ${fmtFen(r.after_total)}(差额 ${fmtFen(r.delta)},已对平)`,true);
+    loadPeriods();openPeriod(curPeriodId);
+  }catch(e){showMsg("#adj-msg",e.message,false);}
+}
+
+// ---------- 启动 ----------
+$("#nav").innerHTML=TABS.map(([id,name],i)=>`<button data-tab="${id}" class="${i===0?"on":""}">${name}</button>`).join("");
+$("#nav").onclick=e=>{
+  if(e.target.tagName!=="BUTTON")return;
+  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("on",b===e.target));
+  document.querySelectorAll("section.tab").forEach(s=>s.classList.toggle("on",s.id==="tab-"+e.target.dataset.tab));
+};
+document.querySelector("section.tab").classList.add("on");
+$("#sc-date").value=today();$("#pk-date").value=today();$("#pk-ts").value=nowLocal();
+$("#mk-ts").value=nowLocal();$("#ch-date").value=today();$("#op-date").value=today();$("#at-date").value=today();
+$("#pe-start").value=today().slice(0,8)+"01";$("#pe-end").value=today().slice(0,8)+"30";
+newKey();newOpKey();renderChPayload();
+loadAll();
+</script>
+</body>
+</html>
